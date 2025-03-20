@@ -1,13 +1,18 @@
-const canvas = document.getElementById('canvas');
+const container = document.querySelector('.container');
 const footer = document.querySelector('footer');
 const select = footer.querySelector('select');
 
-const ctx = canvas.getContext('2d');
-
 const configUrl = './configs/config.json';
 
-let characterState;
-let currentRunnerId;
+const globalCtx = document.getElementById('canvas').getContext('2d');
+
+globalCtx.canvas.width = 512;
+globalCtx.canvas.height = 512;
+globalCtx.imageSmoothingEnabled = false;
+
+let character;
+let position = { x: 0, y: 0 };
+let effect;
 
 function clear(ctx) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -56,18 +61,17 @@ function createSequence(partState) {
   };
 }
 
-function createDraw(ctx, image) {
-  ctx.imageSmoothingEnabled = false;
+function createDraw(ctx, state) {
   let prevState = {};
   let frame = {};
-  return function draw(queue) {
+  return function draw() {
     clear(ctx);
+    const queue = createQueue(state.parts);
     for (const partKey of queue) {
-      const part = characterState.parts[partKey];
+      const part = state.parts[partKey];
 
       const partState =
-        part.states[characterState.currentState] ??
-        part.states[part.defaultState];
+        part.states[state.animationState] ?? part.states[part.defaultState];
 
       if (partState !== prevState[partKey]) {
         frame[partKey] = createSequence(partState);
@@ -77,7 +81,7 @@ function createDraw(ctx, image) {
       const { x, y, w, h, rect } = frame[partKey]();
       const [sx, sy, sw, sh] = rect;
 
-      ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+      ctx.drawImage(state.image, sx, sy, sw, sh, x, y, w, h);
     }
   };
 }
@@ -90,86 +94,127 @@ function createQueue(parts) {
   return sortedEntries.map((entry) => entry.key);
 }
 
-function createLoop(draw) {
-  const queue = createQueue(characterState.parts);
-  return function loop() {
-    draw(queue);
-    currentRunnerId = requestAnimationFrame(loop);
+// temporal ultra shitty code
+function moveRight() {
+  const stop = () => {
+    clearInterval(timer);
+    position.x = 0;
+    effect = null;
   };
+  const timer = setInterval(() => {
+    position.x += 5;
+    if (position.x > globalCtx.canvas.width) {
+      position.x = -globalCtx.canvas.width;
+    }
+  }, 10);
+  return { stop };
 }
 
-function createCharacterState(config, image) {
-  return {
-    currentState: config.initialState,
-    initialState: config.initialState,
-    name: config.name,
-    image: image,
-    size: config.size,
-    states: config.states,
-    queue: createQueue(config.parts),
-    parts: config.parts,
-  };
+function loop() {
+  clear(globalCtx);
+  character.draw();
+  const hRatio = globalCtx.canvas.width / character.ctx.canvas.width;
+  const vRatio = globalCtx.canvas.height / character.ctx.canvas.height;
+  const ratio = Math.min(hRatio, vRatio);
+  const width = character.ctx.canvas.width * ratio;
+  const height = character.ctx.canvas.height * ratio;
+  const centerX = (globalCtx.canvas.width - width) / 2;
+  const centerY = (globalCtx.canvas.height - height) / 2;
+  globalCtx.drawImage(
+    character.ctx.canvas,
+    effect ? position.x : centerX,
+    effect ? position.y : centerY,
+    width,
+    height
+  );
+  requestAnimationFrame(loop);
 }
 
-async function init(character) {
-  clear(ctx);
-  cancelAnimationFrame(currentRunnerId);
-
-  const config = await loadConfig(`configs/${character}.json`);
-  const original = await loadImage(`assets/${character}.png`);
-
+function updateCharacterUI(character) {
   const buttons = [];
-  for (const stateKey of config.states) {
+  for (const stateKey of character.state.animationStates) {
     const button = document.createElement('button');
     button.dataset['state'] = stateKey;
     button.innerText = stateKey;
     buttons.push(button);
   }
   footer.querySelector('.states').replaceChildren(...buttons);
+}
 
-  characterState = createCharacterState(config, original);
+async function createCharacter(characterId) {
+  const config = await loadConfig(`configs/${characterId}.json`);
+  const original = await loadImage(`assets/${characterId}.png`);
 
-  console.log(characterState);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
 
-  canvas.width = characterState.size[0];
-  canvas.height = characterState.size[1];
+  const [width, height] = config.size;
 
-  const runner = createLoop(createDraw(ctx, original));
+  ctx.canvas.width = width;
+  ctx.canvas.height = height;
+  ctx.imageSmoothingEnabled = false;
 
-  runner();
+  let state = {
+    id: config.id,
+    width,
+    height,
+    image: original,
+    animationState: config.initialState,
+    animationStates: config.states,
+    parts: config.parts,
+  };
+
+  let draw = createDraw(ctx, state);
+
+  const changeState = (animationState) => {
+    state.animationState = animationState;
+    if (animationState === 'walk-right') {
+      effect = moveRight();
+    } else {
+      effect?.stop();
+    }
+    draw = createDraw(ctx, state);
+  };
+
+  const character = { ctx, state, draw, changeState };
+
+  updateCharacterUI(character);
+
+  return character;
 }
 
 document.body.onload = async () => {
   try {
     const config = await loadConfig(configUrl);
 
-    const selectedCharacter = config.selectedCharacter ?? config.characters[0];
+    const selectedCharacterId = config.characters[0];
 
     const options = [];
     for (const character of config.characters) {
       const option = document.createElement('option');
       option.setAttribute('value', character);
       option.innerText = character;
-      if (option.value === selectedCharacter) {
+      if (option.value === selectedCharacterId) {
         option.setAttribute('selected', true);
       }
       options.push(option);
     }
     select.append(...options);
 
-    select.addEventListener('change', (e) => {
-      init(e.target.value);
+    select.addEventListener('change', async (e) => {
+      character = await createCharacter(e.target.value);
+      effect?.stop();
     });
 
     footer.addEventListener('click', (e) => {
       if (e.target.nodeName !== 'BUTTON') return;
-      characterState.currentState = e.target.dataset['state'];
+      character.changeState(e.target.dataset['state']);
     });
 
-    init(selectedCharacter);
+    character = await createCharacter(selectedCharacterId);
+
+    loop();
   } catch (e) {
     console.error(e);
   }
 };
-
-// console.log = () => null;

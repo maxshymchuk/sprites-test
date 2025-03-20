@@ -1,4 +1,3 @@
 {
-  "characters": ["man", "egg", "player"],
-  "selectedCharacter": "player"
+  "characters": ["player", "man", "egg"]
 }

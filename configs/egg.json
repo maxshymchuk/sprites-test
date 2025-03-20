@@ -1,5 +1,5 @@
 {
-  "name": "egg",
+  "id": "egg",
   "size": [10, 12],
   "states": ["idle", "birth"],
   "initialState": "idle",

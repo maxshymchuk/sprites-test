@@ -1,5 +1,5 @@
 {
-  "name": "man",
+  "id": "man",
   "size": [40, 50],
   "states": ["idle", "happy", "laugh", "anger", "cry"],
   "initialState": "idle",
