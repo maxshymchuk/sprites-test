@@ -1,21 +1,25 @@
 const canvas = document.getElementById('canvas');
 const footer = document.querySelector('footer');
+const select = footer.querySelector('select');
 
 const ctx = canvas.getContext('2d');
 
-const SCALE = 10;
-
-const configUrl = './config.json';
+const configUrl = './configs/config.json';
 
 let characterState;
+let currentRunnerId;
 
-async function loadConfig() {
-  const response = await fetch(configUrl);
+function clear(ctx) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+}
+
+async function loadConfig(url) {
+  const response = await fetch(url);
   if (response.ok) {
     const config = await response.json();
     return config;
   } else {
-    throw "Can't load config";
+    throw `Can't load config ${url}`;
   }
 }
 
@@ -34,21 +38,21 @@ async function loadImage(url) {
     const image = await createImage(blob);
     return image;
   } else {
-    throw "Can't load image";
+    throw `Can't load image ${url}`;
   }
 }
 
-function createSequence(state) {
+function createSequence(partState) {
   let elapsed = 0;
   let currentFrame = 0;
   return () => {
-    if (!state.delay) return state.frames[currentFrame];
+    if (!partState.delay) return partState.frames[currentFrame];
     elapsed++;
-    if (elapsed >= state.delay) {
+    if (elapsed >= (partState.frames[currentFrame].delay ?? partState.delay)) {
       elapsed = 0;
-      currentFrame = (currentFrame + 1) % state.frames.length;
+      currentFrame = (currentFrame + 1) % partState.frames.length;
     }
-    return state.frames[currentFrame];
+    return partState.frames[currentFrame];
   };
 }
 
@@ -57,7 +61,7 @@ function createDraw(ctx, image) {
   let prevState = {};
   let frame = {};
   return function draw(queue) {
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    clear(ctx);
     for (const partKey of queue) {
       const part = characterState.parts[partKey];
 
@@ -73,17 +77,7 @@ function createDraw(ctx, image) {
       const { x, y, w, h, rect } = frame[partKey]();
       const [sx, sy, sw, sh] = rect;
 
-      ctx.drawImage(
-        image,
-        sx,
-        sy,
-        sw,
-        sh,
-        x * SCALE,
-        y * SCALE,
-        w * SCALE,
-        h * SCALE
-      );
+      ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
     }
   };
 }
@@ -100,7 +94,7 @@ function createLoop(draw) {
   const queue = createQueue(characterState.parts);
   return function loop() {
     draw(queue);
-    requestAnimationFrame(loop);
+    currentRunnerId = requestAnimationFrame(loop);
   };
 }
 
@@ -117,38 +111,65 @@ function createCharacterState(config, image) {
   };
 }
 
+async function init(character) {
+  clear(ctx);
+  cancelAnimationFrame(currentRunnerId);
+
+  const config = await loadConfig(`configs/${character}.json`);
+  const original = await loadImage(`assets/${character}.png`);
+
+  const buttons = [];
+  for (const stateKey of config.states) {
+    const button = document.createElement('button');
+    button.dataset['state'] = stateKey;
+    button.innerText = stateKey;
+    buttons.push(button);
+  }
+  footer.querySelector('.states').replaceChildren(...buttons);
+
+  characterState = createCharacterState(config, original);
+
+  console.log(characterState);
+
+  canvas.width = characterState.size[0];
+  canvas.height = characterState.size[1];
+
+  const runner = createLoop(createDraw(ctx, original));
+
+  runner();
+}
+
 document.body.onload = async () => {
   try {
-    const config = await loadConfig();
-    const original = await loadImage(config.image);
+    const config = await loadConfig(configUrl);
 
-    console.log(original);
+    const selectedCharacter = config.selectedCharacter ?? config.characters[0];
 
-    for (const stateKey of config.states) {
-      const button = document.createElement('button');
-      button.dataset['state'] = stateKey;
-      button.innerText = stateKey;
-      footer.append(button);
+    const options = [];
+    for (const character of config.characters) {
+      const option = document.createElement('option');
+      option.setAttribute('value', character);
+      option.innerText = character;
+      if (option.value === selectedCharacter) {
+        option.setAttribute('selected', true);
+      }
+      options.push(option);
     }
+    select.append(...options);
 
-    characterState = createCharacterState(config, original);
+    select.addEventListener('change', (e) => {
+      init(e.target.value);
+    });
 
-    console.log(characterState);
+    footer.addEventListener('click', (e) => {
+      if (e.target.nodeName !== 'BUTTON') return;
+      characterState.currentState = e.target.dataset['state'];
+    });
 
-    canvas.width = characterState.size[0] * SCALE;
-    canvas.height = characterState.size[1] * SCALE;
-
-    const runner = createLoop(createDraw(ctx, original));
-
-    runner();
+    init(selectedCharacter);
   } catch (e) {
     console.error(e);
   }
 };
-
-footer.addEventListener('click', (e) => {
-  if (e.target.nodeName !== 'BUTTON') return;
-  characterState.currentState = e.target.dataset['state'];
-});
 
 // console.log = () => null;

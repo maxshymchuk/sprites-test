@@ -1,6 +1,5 @@
 {
-  "name": "test-character",
-  "image": "./image.png",
+  "name": "man",
   "size": [40, 50],
   "states": ["idle", "happy", "laugh", "anger", "cry"],
   "initialState": "idle",
@@ -57,7 +56,7 @@
           ]
         },
         "anger": {
-          "delay": 30,
+          "delay": 10,
           "frames": [
             {
               "rect": [0, 0, 40, 40],

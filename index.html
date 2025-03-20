@@ -14,12 +14,18 @@
         body {
             display: flex;
             flex-direction: column;
+            background-color: #00000011;
         }
 
         footer {
             display: flex;
             gap: 10px;
             padding: 20px;
+        }
+
+        footer .states {
+            display: flex;
+            gap: 10px;
         }
 
         .container {
@@ -39,7 +45,10 @@
     <div class="container">
         <canvas id="canvas"></canvas>
     </div>
-    <footer></footer>
+    <footer>
+        <select id="character-select"></select>
+        <div class="states"></div>
+    </footer>
     <script src="script.js"></script>
 </body>
 </html>
